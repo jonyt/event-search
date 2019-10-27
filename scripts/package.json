@@ -1,0 +1,25 @@
+{
+  "name": "scripts",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "compile": "tsc",
+    "clean": "tsc --build --clean",
+    "start": "node src\\catedra.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@elastic/elasticsearch": "^5.6.16",
+    "@google/maps": "^1.0.1",
+    "@types/elasticsearch": "^5.0.35",
+    "@types/googlemaps": "file:node_modules/@types/googlemaps",
+    "puppeteer": "^1.20.0"
+  },
+  "devDependencies": {
+    "@types/google__maps": "^0.5.8",
+    "@types/puppeteer": "^1.20.2"
+  }
+}
