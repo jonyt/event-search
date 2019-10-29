@@ -1,17 +1,50 @@
 import puppeteer from 'puppeteer';
-// import 'google-maps-api-typings';
-import { createClient, GoogleMapsClient, GeocodingResult } from "@google/maps";
-import { Client, ApiResponse, RequestParams } from '@elastic/elasticsearch';
-
-// import url from 'url';
+import { createClient, GoogleMapsClient } from "@google/maps";
+import { Client, RequestParams } from '@elastic/elasticsearch';
+import dotenv from 'dotenv';
 import fs from 'fs'; // TODO: delete
 
 const html = fs.readFileSync('C:\\Users\\jonyo\\Desktop\\katedra.html','utf8');
 
+class Geocoder {
+    client: GoogleMapsClient;
+    cache: { [key: string]: CoordinatesAndCity; } = {};
+
+    constructor(key: string) {
+        this.client = createClient({
+            key: key,
+            language: 'iw',
+            Promise: Promise
+        });
+    }
+
+    async geocode(location: string) : Promise<CoordinatesAndCity> {
+        if (this.cache[location])
+            return this.cache[location];
+
+        const response = await this.client.geocode({ address: location }).asPromise();
+        const result = response.json.results[0];
+        const cities = result.address_components.filter(component => component.types.includes('locality'));
+        let city = '';
+        if (cities.length > 0)
+            city = cities[0].long_name;
+
+        console.log(city);
+
+        const coordinates = [result.geometry.location.lat, result.geometry.location.lng];
+        const coordinatesAndCity = new CoordinatesAndCity(coordinates, city);
+        this.cache[location] = coordinatesAndCity;
+
+        return coordinatesAndCity;
+    }
+}
+
 (async () => {
-    const geocodingClient = createClient({
-        key: 'my-google-maps-api-key' // TODO
-    });    
+    dotenv.config();
+    const geocodingApiKey = process.env.GOOGLE_API_KEY;
+    if (!geocodingApiKey)
+        throw Error('No Google API key set'); 
+    const geocodingClient = new Geocoder(geocodingApiKey);
     const esClient = new Client({ node: 'http://localhost:9200' })
 
     const browser = await puppeteer.launch({headless: false});
@@ -45,14 +78,14 @@ const html = fs.readFileSync('C:\\Users\\jonyo\\Desktop\\katedra.html','utf8');
         
         const mappedEvents = allEvents.map(e => new Event(e[0], e[1], e[2], e[3], e[4], e[5]));
         for (const event of mappedEvents) {
-            //await event.geocode(geocodingClient);
+            await event.geocode(geocodingClient);
             const doc1: RequestParams.Index = {
                 index: 'events',
                 type: 'event',
                 body: JSON.stringify(event)
             };
             await esClient.index(doc1); 
-            console.log(event);
+            // console.log(event);
         }
     
     } catch (error) {
@@ -61,6 +94,16 @@ const html = fs.readFileSync('C:\\Users\\jonyo\\Desktop\\katedra.html','utf8');
 
     await browser.close();
 })();
+
+class CoordinatesAndCity {
+    coordinates: number[];
+    city: string;
+
+    constructor(coordinates: number[], city: string) {
+        this.coordinates = coordinates;
+        this.city = city;
+    }
+}
 
 class Event {
     title: string;
@@ -73,11 +116,12 @@ class Event {
     exact_location: number[] = [];
 
     constructor(title: string, description: string, source: string, dateString: string, url: string, rawLocation: string) {
-        this.title = title;
-        this.description = description;
-        this.source = source;
-        this.date = this.parseDate(dateString);
-        this.url = url;
+        this.title = title.trim();
+        this.description = description.trim();
+        this.source = source.trim();
+        this.date = this.parseDate(dateString.trim());
+        this.url = url.trim();
+        this.rawLocation = rawLocation.trim();
     }
 
     parseDate(dateString: string) : Date {
@@ -127,13 +171,13 @@ class Event {
         }
     }
 
-    async geocode(client: GoogleMapsClient) {
-        const response = await client.geocode({ address: this.rawLocation }).asPromise();
-        const result = response.json.results[0];
-        const cities = result.address_components.filter(component => component.types.includes('locality'));
-        if (cities.length > 0)
-            this.city = cities[0].long_name;
-
-        this.exact_location = [result.geometry.location.lat, result.geometry.location.lng];    
+    async geocode(client: Geocoder) {
+        try {
+            const result = await client.geocode(this.rawLocation);
+            this.exact_location = result.coordinates;
+            this.city = result.city;    
+        } catch (error) {
+            console.log(error.stack);    
+        }
     }
 }

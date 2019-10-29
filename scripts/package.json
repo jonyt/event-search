@@ -15,7 +15,7 @@
     "@elastic/elasticsearch": "^5.6.16",
     "@google/maps": "^1.0.1",
     "@types/elasticsearch": "^5.0.35",
-    "@types/googlemaps": "file:node_modules/@types/googlemaps",
+    "dotenv": "^8.2.0",
     "puppeteer": "^1.20.0"
   },
   "devDependencies": {
