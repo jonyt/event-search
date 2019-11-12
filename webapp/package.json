@@ -4,16 +4,19 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "rerun": "rm app.js && tsc && node app.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@elastic/elasticsearch": "^5.6.0",
     "@types/express": "^4.17.1",
     "cors": "^2.8.5",
     "express": "^4.17.1"
   },
   "devDependencies": {
-    "@types/cors": "^2.8.6"
+    "@types/cors": "^2.8.6",
+    "@types/elasticsearch": "^5.0.36"
   }
 }
