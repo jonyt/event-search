@@ -5,12 +5,13 @@ import Html exposing (..)
 import Html.Attributes exposing (style, href, placeholder, value, type_)
 import Html.Events.Extra exposing (onEnter)
 import Html.Events exposing (onClick, onInput)
-import Date exposing (Date)
+import Date exposing (Date, fromPosix)
 import DatePicker exposing (..)
 import Http exposing (get, Error)
 import Json.Decode as JD exposing (Decoder, list, string, decodeString)
 import Url.Builder as U exposing (..)
-import Time exposing (Zone, millisToPosix, utc, toYear)
+-- import Time.Month
+import Time exposing (Posix, Zone, Month(..), now, millisToPosix, utc, toYear, toMonth, toDay, toHour, toMinute)
 import Task exposing (..)
 
 type alias Event = {
@@ -26,8 +27,6 @@ type alias Model = {
     , city : String 
     , fromDatePicker : DatePicker 
     , fromDate: Maybe Date 
-    , toDatePicker : DatePicker 
-    , toDate: Maybe Date 
     , events: List Event
     , cities: List String
     , state: State
@@ -38,10 +37,10 @@ type Msg = Submit |
   Change String |
   EnterPressed |
   ToStartDatePicker DatePicker.Msg |
-  ToEndDatePicker DatePicker.Msg |
   GotCities (Result Http.Error (List String)) |
   GotEvents (Result Http.Error (List Event)) |
-  TimeZoneUpdated Zone
+  TimeZoneUpdated Zone |
+  CurrentTimeUpdated Posix
 
 type State = Loading | Ready | Error
 
@@ -62,13 +61,9 @@ queryUrl model =
       fromDateParam = 
         case model.fromDate of
             Nothing -> []
-            Just date -> [U.string "fromDate" (Date.toIsoString date)]
-      toDateParam = 
-        case model.toDate of
-            Nothing -> []
-            Just date -> [U.string "toDate" (Date.toIsoString date)] 
+            Just date -> [U.string "fromDate" (Date.toIsoString date)] 
 
-      params = freeTextParam ++ cityParam ++ fromDateParam ++ toDateParam
+      params = freeTextParam ++ cityParam ++ fromDateParam
   in
   U.crossOrigin 
     "http://localhost:8080" ["search"] params   
@@ -87,10 +82,48 @@ eventDecoder = JD.map5 Event
   (JD.field "source" JD.string)
   (JD.field "date" JD.int)
 
+getZone : Cmd Msg
+getZone =
+    Time.here |> Task.perform TimeZoneUpdated
+
 getTime : Cmd Msg
 getTime =
-    Time.here
-        |> Task.perform TimeZoneUpdated
+    Time.now |> Task.perform CurrentTimeUpdated
+
+posixTimeToTimeComponentString : Maybe Zone -> Int -> (Zone -> Posix -> Int) -> String
+posixTimeToTimeComponentString zone time transformer =
+  String.fromInt <| 
+    transformer (Maybe.withDefault utc zone) <| millisToPosix time
+
+posixTimeToHebrewMonth : Maybe Zone -> Int -> String
+posixTimeToHebrewMonth zone time = 
+  let
+    month = toMonth (Maybe.withDefault utc zone) <| millisToPosix time
+    hebrewMonth = 
+      case month of
+        Jan -> "ינואר"
+        Feb -> "פברואר"
+        Mar -> "מרץ"
+        Apr -> "אפריל"
+        May -> "מאי"
+        Jun -> "יוני"
+        Jul -> "יולי"
+        Aug -> "אוגוסט"
+        Sep -> "ספטמבר"
+        Oct -> "אוקטובר"
+        Nov -> "נובמבר"
+        Dec -> "דצמבר"             
+  in
+    hebrewMonth
+
+formatTime : Maybe Zone -> Int -> String
+formatTime zone time = 
+  let
+    year = posixTimeToTimeComponentString zone time toYear
+    month = posixTimeToHebrewMonth zone time
+    day = posixTimeToTimeComponentString zone time toDay   
+  in
+  String.join " " <| [year, month, day]
 
 init : (Model, Cmd Msg)
 init = 
@@ -103,13 +136,15 @@ init =
     , city = ""
     , fromDatePicker = datePickerFrom
     , fromDate = Nothing   
-    , toDatePicker = datePickerTo
-    , toDate = Nothing
     , events = []
     , cities = ["All"]
     , state = Loading
     , timeZone = Nothing
-  }, Cmd.batch [Cmd.map ToStartDatePicker datePickerCmdFrom, Cmd.map ToEndDatePicker datePickerCmdTo, getCities])
+  }, Cmd.batch [
+        Cmd.map ToStartDatePicker datePickerCmdFrom 
+        , getCities 
+        , getZone]
+  )
 
 visibility : Model -> State -> Attribute msg
 visibility model state = 
@@ -122,29 +157,28 @@ visibility model state =
 view : Model -> Html Msg
 view model =
     div [] [
-       h2 [] [ text "Search for events" ]
-       , input [ placeholder "Search", onInput Change ] []
+       h2 [] [ text "חפש אירועים" ]
+       , input [ placeholder "חיפוש חופשי", onInput Change ] []
        , select [] (List.map (\x -> option [value x] [text x])  model.cities)
        , DatePicker.view model.fromDate defaultSettings model.fromDatePicker |> Html.map ToStartDatePicker
-       , DatePicker.view model.toDate defaultSettings model.toDatePicker |> Html.map ToEndDatePicker
-       , button [onClick Submit ] [ text "Submit" ]
+       , button [onClick Submit ] [ text "חיפוש" ]
        , div [] [
-         p [visibility model Error] [text "An error has occurred"]
-         , p [visibility model Loading] [text "Loading..."]
+         p [visibility model Error] [text "ארעה שגיאה"]
+         , p [visibility model Loading] [text "טוען..."]
          , table [] [
            thead [] [
-             th [] [text "Title"]
-             , th [] [text "Description"]
-             , th [] [text "Location"]
-             , th [] [text "Source"]
-             , th [] [text "Time"]
+             th [] [text "שם"]
+             , th [] [text "תיאור"]
+             , th [] [text "מיקום"]
+             , th [] [text "מקור"]
+             , th [] [text "זמן"]
            ]
            , tbody [] (List.map (\event -> tr [] [
              td [] [text event.name]
              , td [] [text event.description]
              , td [] [text event.location]
              , td [] [text event.source]
-             , td [] [text <| String.fromInt <| toYear (Maybe.withDefault utc model.timeZone) <| millisToPosix event.time]
+             , td [] [text <| formatTime model.timeZone event.time]
            ]) model.events)
          ]
        ]
@@ -177,27 +211,10 @@ update msg model =
         }
       , Cmd.none
       )
-    ToEndDatePicker subMsg ->
-      let
-        ( newDatePicker, dateEvent ) =
-            DatePicker.update defaultSettings subMsg model.toDatePicker
-        newDate =
-          case dateEvent of
-            Picked changedDate ->
-              Just changedDate
-            _ ->
-              model.toDate
-      in
-      ( { model
-          | toDate = newDate
-          , toDatePicker = newDatePicker
-        }
-      , Cmd.none
-      )
     GotCities result ->
       case result of
         Ok cities ->
-          ({model | cities = cities ++ ["All"], state = Ready}, Cmd.none)
+          ({model | cities = ["All"] ++ cities, state = Ready}, Cmd.none)
         Err _ ->
           ({model | state = Error}, Cmd.none)
     GotEvents result ->
@@ -207,7 +224,13 @@ update msg model =
           Err _ ->
             ({model | state = Error}, Cmd.none)
     TimeZoneUpdated zone ->
-      ({model | timeZone = Just zone}, Cmd.none)
+      ({model | timeZone = Just zone}, getTime)
+    CurrentTimeUpdated posixTime ->
+      let
+        today = fromPosix (Maybe.withDefault utc model.timeZone) posixTime
+      in
+        ({model | fromDate = Just today}, Cmd.none)
+      
 
               
 
