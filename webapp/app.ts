@@ -1,32 +1,70 @@
 import express = require("express");
 import cors = require("cors");
 import {Client, RequestParams, ApiResponse} from '@elastic/elasticsearch';
-// import elasticsearch = require('elasticsearch');
 
 const app = express();
 app.use(cors());
+app.options('*', cors());
 const port = 8080;
 const esClient = new Client({ node: 'http://localhost:9200' });
 
-app.get( "/search", async ( request, response ) => {
+app.get('/search', async ( request, response ) => {
     console.log(request.query);
-    const query = request.query.query;
+    const query = request.query.query && request.query.query.trim().length > 0 ? request.query.query : undefined;
     const city = request.query.city;
     const fromDate = request.query.fromDate;
-    const toDate = request.query.toDate;
 
+    let queryString = `startTime:>=${fromDate}`;
+    let fields = ['startTime'];
+
+    if (city != 'All' && city.trim().length > 0) {
+        queryString += ` AND (${city})`;
+        fields.push(city);
+    } 
+
+    if (query) {
+        queryString += ` AND (${query})`;
+        fields.push('title', 'description');
+    }
+
+    queryString = `(${query}) AND startTime:>=${fromDate}`;
+
+    console.log("AAAAAAAAAAAA " + queryString);
+
+    const search = {
+        index: 'events',
+        body: {
+            query: {
+                query_string: {
+                    query: queryString,
+                    fields: fields,
+                    analyzer: 'hebrew_query'
+                }
+            }
+        }
+    };
+
+    const termQuery = (query && query.trim().length > 0 ?
+        {term: {title: query}}:
+        {query: {exists: {field: "title"}}}
+    );
+    const cityQuery = (city == 'All' ? 
+        {query: {exists: {field: "city"}}} :
+        {term: {city: city}});
+    
     const searchParams = {
         index: 'events',
         body: {
             query: {
                 bool: {
                     must: [
-                        {range: {date: {gte: "2010-01-01"}}},
+                        {range: {startTime: {gte: fromDate}}},
                         {
                             bool: {
                                 should: [
                                     {term: {title: query}},
-                                    {term: {description: query}}
+                                    {term: {description: query}},
+                                    cityQuery
                                 ]
                             }
                         }
@@ -35,24 +73,26 @@ app.get( "/search", async ( request, response ) => {
             }
         }
     };
-
+// curl localhost:9200/events/_search?pretty -d'{"query": {"multi_match": {"query": "פסנתר", "fields": ["title", "description"], "fuzziness": "AUTO"}}}'
     try {
-        const result: ApiResponse<SearchResponse<Source>> = await esClient.search(searchParams);
+        const result: ApiResponse<SearchResponse<Event>> = await esClient.search(search);
         const jsonResponse = result.body.hits.hits.map(hit => {
             const event = hit._source;
-            const unixTime = Date.parse(event.date);
+            const unixTime = Date.parse(event.startTime);
             return {
                 title: event.title,
                 description: event.description,
                 location: event.rawLocation,
                 source: event.source,
-                date: unixTime
+                url: event.url,
+                startTime: unixTime
             };
         });
         response.json(jsonResponse);    
     } catch (error) {
         console.error(error);
         response.status(500);
+        response.send("An error has occurred");
     }
 } );
 
@@ -65,14 +105,14 @@ app.get( "/cities", async ( req, res ) => {
             },
             aggs: {
                 unique_cities: {
-                    terms: {field: 'city'}
+                    terms: {field: 'city.keyword'}
                 }
             }
         }
     };
 
     try {
-        const result: ApiResponse<SearchResponse<Source>> = await esClient.search(searchParams);
+        const result: ApiResponse<SearchResponse<Event>> = await esClient.search(searchParams);
         const cities = result.body.aggregations.unique_cities.buckets.map(bucket => bucket.key);
         
         res.json(cities);
@@ -80,6 +120,7 @@ app.get( "/cities", async ( req, res ) => {
         // TODO: why can't I use next()? Something to do with the import statement.
         console.log(error);
         res.status(500);
+        res.send("An error has occurred");
     }
 } );
 
@@ -104,12 +145,12 @@ interface Bucket {
     doc_count: number;
 }
 
-interface Source {
+interface Event {
     rawLocation: string;
     city: string;
     title: string;
     description: string;
     source: string;
-    date: string;
+    startTime: string;
     url: string;
 }

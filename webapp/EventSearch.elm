@@ -2,7 +2,7 @@ module EventSearch exposing (..)
 
 import Browser exposing (element)
 import Html exposing (..)
-import Html.Attributes exposing (style, href, placeholder, value, type_)
+import Html.Attributes exposing (style, href, placeholder, value, type_, title, target)
 import Html.Events.Extra exposing (onEnter)
 import Html.Events exposing (onClick, onInput)
 import Date exposing (Date, fromPosix)
@@ -20,6 +20,7 @@ type alias Event = {
     , location: String
     , source: String
     , time: Int
+    , url: String
     }
 
 type alias Model = {
@@ -75,12 +76,13 @@ eventListDecoder : Decoder (List Event)
 eventListDecoder = list eventDecoder
 
 eventDecoder : Decoder Event
-eventDecoder = JD.map5 Event
+eventDecoder = JD.map6 Event
   (JD.field "title" JD.string)
   (JD.field "description" JD.string)
   (JD.field "location" JD.string)
   (JD.field "source" JD.string)
-  (JD.field "date" JD.int)
+  (JD.field "startTime" JD.int)
+  (JD.field "url" JD.string)
 
 getZone : Cmd Msg
 getZone =
@@ -123,7 +125,7 @@ formatTime zone time =
     month = posixTimeToHebrewMonth zone time
     day = posixTimeToTimeComponentString zone time toDay   
   in
-  String.join " " <| [year, month, day]
+  day ++ " " ++ month ++ ", " ++ year
 
 init : (Model, Cmd Msg)
 init = 
@@ -168,17 +170,15 @@ view model =
          , table [] [
            thead [] [
              th [] [text "שם"]
-             , th [] [text "תיאור"]
-             , th [] [text "מיקום"]
-             , th [] [text "מקור"]
              , th [] [text "זמן"]
+             , th [] [text "תיאור"]
+             , th [] [text "מקור"]             
            ]
            , tbody [] (List.map (\event -> tr [] [
-             td [] [text event.name]
-             , td [] [text event.description]
+             td [] [a [(href event.url), (title event.description), (target "_blank")] [text event.name]]
+             , td [] [text <| formatTime model.timeZone event.time]
              , td [] [text event.location]
              , td [] [text event.source]
-             , td [] [text <| formatTime model.timeZone event.time]
            ]) model.events)
          ]
        ]
@@ -221,7 +221,7 @@ update msg model =
       case result of
           Ok events ->
             ({model | events = events, state = Ready}, Cmd.none)
-          Err _ ->
+          Err _ ->                      
             ({model | state = Error}, Cmd.none)
     TimeZoneUpdated zone ->
       ({model | timeZone = Just zone}, getTime)

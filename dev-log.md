@@ -1,49 +1,61 @@
 # Useful commands
 
 ## ElasticSearch
+Follow instructions for installing Hebrew analyzer from (here)[https://github.com/synhershko/elasticsearch-analysis-hebrew/wiki/Getting-Started]. 
+ 
+
 Create events index
 `curl -X PUT "localhost:9200/events?pretty&pretty"`
 
-Mapping:
+Create mapping for event
 
 ```
-{
+curl -X PUT "localhost:9200/events/_mapping/event" -d'{
    "properties":{
       "title":{
-         "type":"text"
+         "type":"text",
+         "analyzer":"hebrew"
       },
       "description":{
-         "type":"text"
+         "type":"text",
+         "analyzer":"hebrew"
       },
       "source":{
-         "type":"text"
+         "type":"text",
+         "analyzer":"hebrew"
       },
-      "date":{
+      "startTime":{
+         "type":"date"
+      },
+      "endTime":{
          "type":"date"
       },
       "url":{
          "type":"text",
          "index":false
       },
-      "raw_location":{
+      "rawLocation":{
          "type":"text",
          "index":false
       },
       "city":{
-         "type":"keyword"
+         "type":"text",
+         "analyzer":"hebrew",
+         "fields": {
+          "keyword": { 
+            "type": "keyword"
+          }
+        }
       },
-      "exact_location":{
+      "exactLocation":{
          "type":"geo_point"
       },
       "created":{
          "type":"date"
       }
    }
-}
+}'
 ```
-
-Create mapping for event
-`curl -X PUT "localhost:9200/events/_mapping/event" -d"{  \"properties\": {    \"title\": {      \"type\": \"text\"     },    \"description\": {        \"type\": \"text\"     },    \"source\": {        \"type\": \"text\"     },    \"date\": {        \"type\": \"date\"     },    \"url\": {        \"type\": \"text\",        \"index\": false     },    \"raw_location\": {        \"type\": \"text\",        \"index\": false     },    \"city\": {        \"type\": \"text\"     },    \"exact_location\": {        \"type\": \"geo_point\"     },    \"created\": {        \"type\": \"date\"     }  }}"`
 
 Get all docs: `http://localhost:9200/events/_search?pretty=true&q=*:*` 
 Delete all documents: `\dev\curl-7.66.0-win64-mingw\bin\curl.exe -XPOST "http://localhost:9200/events/event/_delete_by_query" -d "{\"query\":{\"match_all\":{}}}"`
@@ -79,15 +91,9 @@ Install TS typings for Google Maps: `npm i --save-dev @types/google__maps`
 https://package.elm-lang.org/packages/jschomay/elm-paginate/latest/Paginate
 
 # TODOs:
-1. Make sure search by date/city works.
-1. Add start/end date to crawler + app.
-1. Format date in results.
-1. Format description in results.
-1. Add link to event.
-1. Make crawl idempotent by making _id = URL.
-1. TA municipal events crawler.
+1. Add start/end date to crawler + app. (!!)
+1. TA municipal events crawler. (!!)
+1. Bootstrap CSS. (!!)
 1. Pagination.
-1. Hebrew.
-1. Transform TAU to Hebrew.
-1. Bootstrap CSS.
-1. Deploy.
+1. Use `next()` in app response.
+1. Deploy. (!!)
